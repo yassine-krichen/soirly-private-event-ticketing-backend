@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(uuid())
+  email         String    @unique
+  name          String
+  role          UserRole
+  oauthProvider String
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  events        Event[]   @relation("InviterEvents")
+  payments      Payment[]
+}
+
+model Event {
+  id           String    @id @default(uuid())
+  title        String
+  description  String
+  dateTime     DateTime
+  location     String
+  entryPrice   Decimal   @db.Decimal(10, 2)
+  inviteeCount Int       @default(0)
+  isPrivate    Boolean   @default(true)
+  inviterId    String
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  inviter      User      @relation("InviterEvents", fields: [inviterId], references: [id])
+  payments     Payment[]
+
+  @@index([inviterId])
+}
+
+model Payment {
+  id                String        @id @default(uuid())
+  eventId           String
+  userId            String
+  amount            Decimal       @db.Decimal(10, 2)
+  appFee            Decimal       @db.Decimal(10, 2)
+  status            PaymentStatus @default(PENDING)
+  konnectReference  String        @unique
+  konnectPaymentUrl String?
+  metadata          Json?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+  event             Event         @relation(fields: [eventId], references: [id])
+  user              User          @relation(fields: [userId], references: [id])
+
+  @@index([eventId])
+  @@index([userId])
+}
+
+enum UserRole {
+  INVITER
+  INVITEE
+}
+
+enum PaymentStatus {
+  PENDING
+  SUCCESS
+  FAILED
+}
