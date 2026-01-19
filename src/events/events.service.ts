@@ -27,14 +27,6 @@ export class EventsService {
 		return event;
 	}
 
-	async incrementInviteeCount(eventId: string, tx?: Prisma.TransactionClient) {
-		const client = tx ?? this.prisma;
-		return client.event.update({
-			where: { id: eventId },
-			data: { inviteeCount: { increment: 1 } },
-		});
-	}
-
 	async listForInviter(inviterId: string) {
 		return this.prisma.event.findMany({
 			where: { inviterId },

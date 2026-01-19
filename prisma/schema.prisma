@@ -7,62 +7,180 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-model User {
-  id            String    @id @default(uuid())
-  email         String    @unique
-  name          String
-  role          UserRole
-  oauthProvider String
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  events        Event[]   @relation("InviterEvents")
-  payments      Payment[]
+// ============================================
+// ENUMS
+// ============================================
+
+enum Role {
+  USER
+  ADMIN
 }
 
-model Event {
-  id           String    @id @default(uuid())
-  title        String
-  description  String
-  dateTime     DateTime
-  location     String
-  entryPrice   Decimal   @db.Decimal(10, 2)
-  inviteeCount Int       @default(0)
-  isPrivate    Boolean   @default(true)
-  inviterId    String
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
-  inviter      User      @relation("InviterEvents", fields: [inviterId], references: [id])
-  payments     Payment[]
-
-  @@index([inviterId])
-}
-
-model Payment {
-  id                String        @id @default(uuid())
-  eventId           String
-  userId            String
-  amount            Decimal       @db.Decimal(10, 2)
-  appFee            Decimal       @db.Decimal(10, 2)
-  status            PaymentStatus @default(PENDING)
-  konnectReference  String        @unique
-  konnectPaymentUrl String?
-  metadata          Json?
-  createdAt         DateTime      @default(now())
-  updatedAt         DateTime      @updatedAt
-  event             Event         @relation(fields: [eventId], references: [id])
-  user              User          @relation(fields: [userId], references: [id])
-
-  @@index([eventId])
-  @@index([userId])
-}
-
-enum UserRole {
-  INVITER
-  INVITEE
+enum InvitationStatus {
+  PENDING    // clicked link, authenticated, not paid yet
+  CONFIRMED  // payment succeeded, ticket issued
+  DECLINED   // user explicitly declined invitation
 }
 
 enum PaymentStatus {
-  PENDING
-  SUCCESS
-  FAILED
+  PENDING    // payment initiated, awaiting completion
+  SUCCESS    // payment completed successfully
+  FAILED     // payment failed
+}
+
+// ============================================
+// MODELS
+// ============================================
+
+model User {
+  id             String       @id @default(uuid())
+  email          String       @unique
+  name           String?
+  password       String?
+  oauthProvider  String?      // "google", etc.
+  oauthId        String?
+  role           Role         @default(USER)
+  isActive       Boolean      @default(true)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  createdEvents  Event[]            @relation("InviterEvents")
+  invitations    EventInvitation[]
+  payments       Payment[]
+  paymentMethods PaymentMethod[]
+  tickets        Ticket[]
+
+  @@index([role])
+  @@index([isActive])
+  @@index([email])
+}
+
+model Event {
+  id               String    @id @default(uuid())
+  title            String
+  description      String?
+  dateTime         DateTime
+  location         String?
+  entryPrice       Decimal   @db.Decimal(10, 2)
+  isPrivate        Boolean   @default(true)
+  inviteToken      String    @unique @default(uuid())
+  inviteLinkActive Boolean   @default(true)
+  maxAttendees     Int?      // null = unlimited
+  inviterId        String
+  sponsorId        String?   // selected sponsor for this event
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  inviter     User                @relation("InviterEvents", fields: [inviterId], references: [id], onDelete: Restrict)
+  sponsor     Sponsor?            @relation(fields: [sponsorId], references: [id], onDelete: SetNull)
+  invitations EventInvitation[]
+  payments    Payment[]
+  tickets     Ticket[]
+
+  @@index([inviterId])
+  @@index([dateTime])
+  @@index([inviteToken])
+  @@index([sponsorId])
+}
+
+model EventInvitation {
+  id          String           @id @default(uuid())
+  eventId     String
+  userId      String
+  status      InvitationStatus @default(PENDING)
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+  confirmedAt DateTime?        // when payment succeeded
+  declinedAt  DateTime?        // when user declined
+
+  event    Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payments Payment[] // track all payment attempts for this invitation
+
+  @@unique([eventId, userId])  // one invitation per user per event
+  @@index([eventId, status])
+  @@index([userId])
+  @@index([status])
+}
+
+model Payment {
+  id                 String        @id @default(uuid())
+  eventId            String
+  userId             String
+  invitationId       String        // required - links to invitation
+  amount             Decimal       @db.Decimal(10, 2)
+  appFee             Decimal       @db.Decimal(10, 2)
+  status             PaymentStatus @default(PENDING)
+  provider           String        @default("konnect") // "konnect", "test", "stripe"
+  providerReference  String        @unique // konnectReference or test reference
+  providerPaymentUrl String?
+  receiptUrl         String?
+  metadata           Json?
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  event      Event            @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  user       User             @relation(fields: [userId], references: [id], onDelete: Restrict)
+  invitation EventInvitation  @relation(fields: [invitationId], references: [id], onDelete: Cascade)
+  ticket     Ticket?          // one-to-one: payment produces one ticket on success
+
+  @@index([eventId])
+  @@index([userId])
+  @@index([invitationId])
+  @@index([status])
+  @@index([provider])
+}
+
+model Ticket {
+  id          String    @id @default(uuid())
+  ticketCode  String    @unique @default(uuid())
+  eventId     String
+  userId      String
+  paymentId   String    @unique  // one ticket per payment
+  issuedAt    DateTime  @default(now())
+  checkedInAt DateTime?          // for future check-in feature
+
+  event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  payment Payment @relation(fields: [paymentId], references: [id], onDelete: Restrict)
+
+  @@unique([eventId, userId])  // one ticket per user per event
+  @@index([eventId])
+  @@index([userId])
+  @@index([ticketCode])
+}
+
+model PaymentMethod {
+  id            String   @id @default(uuid())
+  userId        String
+  provider      String   // "konnect", "stripe"
+  providerToken String   // tokenized payment method
+  cardBrand     String?
+  cardLast4     String?
+  expMonth      Int?
+  expYear       Int?
+  isDefault     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([isDefault])
+}
+
+model Sponsor {
+  id           String    @id @default(uuid())
+  name         String
+  description  String?
+  logoUrl      String?
+  contactEmail String?
+  active       Boolean   @default(false)
+  paidUntil    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  events Event[]  // events using this sponsor
+
+  @@index([active])
 }

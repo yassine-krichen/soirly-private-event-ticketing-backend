@@ -1,11 +1,11 @@
 import { Injectable } from '@nestjs/common';
-import { User, UserRole } from '@prisma/client';
+import { User } from '@prisma/client';
 import { PrismaService } from '../common/prisma/prisma.service';
 
-interface UpsertGoogleUserArgs {
+interface CreateUserArgs {
 	email: string;
-	name: string;
-	role: UserRole;
+	password: string;
+	name?: string;
 }
 
 @Injectable()
@@ -16,30 +16,16 @@ export class UsersService {
 		return this.prisma.user.findUnique({ where: { id } });
 	}
 
-	async upsertGoogleUser(args: UpsertGoogleUserArgs): Promise<User> {
-		const existing = await this.prisma.user.findUnique({ where: { email: args.email } });
-		if (existing) {
-			if (args.role && existing.role !== args.role) {
-				return this.prisma.user.update({
-					where: { id: existing.id },
-					data: { name: args.name, role: args.role },
-				});
-			}
-			if (existing.name !== args.name) {
-				return this.prisma.user.update({
-					where: { id: existing.id },
-					data: { name: args.name },
-				});
-			}
-			return existing;
-		}
+	async findByEmail(email: string) {
+		return this.prisma.user.findUnique({ where: { email } });
+	}
 
+	async createUser(args: CreateUserArgs): Promise<User> {
 		return this.prisma.user.create({
 			data: {
 				email: args.email,
+				password: args.password,
 				name: args.name,
-				role: args.role ?? UserRole.INVITEE,
-				oauthProvider: 'google',
 			},
 		});
 	}

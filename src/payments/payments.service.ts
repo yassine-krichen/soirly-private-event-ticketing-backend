@@ -6,7 +6,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { EventsService } from '../events/events.service';
 import { CreatePaymentDto } from './dto/create-payment.dto';
 import { KonnectWebhookDto } from './dto/konnect-webhook.dto';
-import { KonnectService } from './konnect.service';
+import { PaymentProviderFactory } from './providers/payment-provider.factory';
 
 interface RequestUser {
 	sub: string;
@@ -22,8 +22,8 @@ export class PaymentsService {
 	constructor(
 		private readonly prisma: PrismaService,
 		private readonly eventsService: EventsService,
-		private readonly konnectService: KonnectService,
-		configService: ConfigService,
+		private readonly paymentProviderFactory: PaymentProviderFactory,
+		private readonly configService: ConfigService,
 	) {
 		this.webhookSecret = configService.get<string>('KONNECT_WEBHOOK_SECRET', 'konnect-webhook-secret');
 		this.appFeePercent = Number(configService.get<string>('APP_FEE_PERCENT', '5'));
@@ -38,36 +38,41 @@ export class PaymentsService {
 		const entryPrice = Number(event.entryPrice);
 		const appFee = Number(((entryPrice * this.appFeePercent) / 100).toFixed(2));
 		const total = entryPrice + appFee;
-		const konnectReference = randomUUID();
+		const providerReference = randomUUID();
+		const provider = this.paymentProviderFactory.getProvider();
 
+		// TODO: Phase 3 - Add invitation validation and linking
 		const payment = await this.prisma.payment.create({
 			data: {
 				eventId: event.id,
 				userId: user.sub,
 				amount: new Prisma.Decimal(entryPrice),
 				appFee: new Prisma.Decimal(appFee),
-				konnectReference,
-				konnectPaymentUrl: null,
+				providerReference,
+				provider: provider.getProviderName(),
+				providerPaymentUrl: null,
 				status: PaymentStatus.PENDING,
+				// TODO: Add invitationId when invitation system is implemented
+				invitationId: '', // Temporary placeholder
 			},
 		});
 
-		const session = await this.konnectService.createSession({
-			reference: konnectReference,
+		const session = await provider.createSession({
+			reference: providerReference,
 			amount: total,
 			customerEmail: user.email,
-			title: `Event ${event.title}`,
+			title: `Event: ${event.title}`,
 		});
 
 		await this.prisma.payment.update({
 			where: { id: payment.id },
-			data: { konnectPaymentUrl: session.paymentUrl },
+			data: { providerPaymentUrl: session.paymentUrl },
 		});
 
 		return {
 			paymentId: payment.id,
 			paymentUrl: session.paymentUrl,
-			konnectReference,
+			providerReference,
 		};
 	}
 
@@ -81,7 +86,7 @@ export class PaymentsService {
 		}
 
 		const payment = await this.prisma.payment.findUnique({
-			where: { konnectReference: payload.reference },
+			where: { providerReference: payload.reference },
 		});
 
 		if (!payment) {
@@ -93,15 +98,10 @@ export class PaymentsService {
 			return { success: true };
 		}
 
-		await this.prisma.$transaction(async (tx) => {
-			await tx.payment.update({
-				where: { id: payment.id },
-				data: { status: payload.status },
-			});
-
-			if (payload.status === PaymentStatus.SUCCESS) {
-				await this.eventsService.incrementInviteeCount(payment.eventId, tx);
-			}
+		// TODO: Phase 3 - Update invitation status and create ticket
+		await this.prisma.payment.update({
+			where: { id: payment.id },
+			data: { status: payload.status },
 		});
 
 		return { success: true };

@@ -1,29 +1,33 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
-
-interface CreateSessionArgs {
-  reference: string;
-  amount: number;
-  customerEmail: string;
-  title: string;
-}
+import {
+  PaymentProvider,
+  CreateSessionArgs,
+  PaymentSession,
+} from './payment-provider.interface';
 
 @Injectable()
-export class KonnectService {
-  private readonly logger = new Logger(KonnectService.name);
+export class KonnectPaymentProvider implements PaymentProvider {
+  private readonly logger = new Logger(KonnectPaymentProvider.name);
   private readonly baseUrl: string;
   private readonly apiKey?: string;
 
   constructor(private readonly configService: ConfigService) {
-    this.baseUrl = this.configService.get<string>('KONNECT_BASE_URL', 'https://sandbox.konnect.network');
+    this.baseUrl = this.configService.get<string>(
+      'KONNECT_BASE_URL',
+      'https://sandbox.konnect.network',
+    );
     this.apiKey = this.configService.get<string>('KONNECT_API_KEY');
   }
 
-  async createSession(args: CreateSessionArgs) {
+  getProviderName(): string {
+    return 'konnect';
+  }
+
+  async createSession(args: CreateSessionArgs): Promise<PaymentSession> {
     if (!this.apiKey) {
-      // Fall back to a mocked URL to keep local development unblocked.
-      this.logger.warn('KONNECT_API_KEY missing; returning mocked payment session URL');
+      this.logger.warn('KONNECT_API_KEY missing; returning mocked payment URL');
       return {
         paymentUrl: `${this.baseUrl}/mock/pay/${args.reference}`,
         reference: args.reference,
@@ -47,7 +51,9 @@ export class KonnectService {
       );
 
       return {
-        paymentUrl: response.data?.paymentUrl ?? `${this.baseUrl}/mock/pay/${args.reference}`,
+        paymentUrl:
+          response.data?.paymentUrl ??
+          `${this.baseUrl}/mock/pay/${args.reference}`,
         reference: args.reference,
       };
     } catch (error) {
