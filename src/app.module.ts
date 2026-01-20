@@ -7,6 +7,7 @@ import { UsersModule } from './users/users.module';
 import { AuthModule } from './auth/auth.module';
 import { EventsModule } from './events/events.module';
 import { PaymentsModule } from './payments/payments.module';
+import { InvitationsModule } from './invitations/invitations.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { PaymentsModule } from './payments/payments.module';
     UsersModule,
     AuthModule,
     EventsModule,
+    InvitationsModule,
     PaymentsModule,
   ],
   controllers: [AppController],
