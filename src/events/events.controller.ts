@@ -1,10 +1,12 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
   Logger,
@@ -12,8 +14,12 @@ import {
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EventAccessGuard } from '../common/guards/event-access.guard';
 import { CreateEventDto } from './dto/create-event.dto';
+import { UpdateEventDto } from './dto/update-event.dto';
 import { ToggleInviteLinkDto } from './dto/toggle-invite-link.dto';
+import { GetAttendeesDto } from './dto/get-attendees.dto';
+import { CheckinDto } from '../tickets/dto/checkin.dto';
 import { EventsService } from './events.service';
+import { TicketsService } from '../tickets/tickets.service';
 
 /**
  * 🎉 EVENTS CONTROLLER
@@ -24,7 +30,10 @@ import { EventsService } from './events.service';
 export class EventsController {
   private readonly logger = new Logger(EventsController.name);
 
-  constructor(private readonly eventsService: EventsService) {}
+  constructor(
+    private readonly eventsService: EventsService,
+    private readonly ticketsService: TicketsService,
+  ) {}
 
   /**
    * 📝 ENDPOINT: POST /events
@@ -269,5 +278,211 @@ export class EventsController {
       `POST /events/${eventId}/invite-link/regenerate - User: ${req.user.sub}`,
     );
     return this.eventsService.regenerateInviteToken(eventId, req.user.sub);
+  }
+
+  /**
+   * ✏️ ENDPOINT: PATCH /events/:id
+   *
+   * Update event details (event owner only).
+   *
+   * Auth: Required (JWT) + Must be event owner
+   *
+   * Request Body (all fields optional):
+   * {
+   *   "title": "Updated Title",
+   *   "description": "New description",
+   *   "dateTime": "2026-03-01T20:00:00Z",
+   *   "location": "New Location",
+   *   "entryPrice": 30.00,
+   *   "isPrivate": false,
+   *   "maxAttendees": 100
+   * }
+   *
+   * Business Rules:
+   * - title, description, location, isPrivate: Always allowed
+   * - dateTime: Cannot set to past, cannot change after event started
+   * - entryPrice: BLOCKED if any confirmed attendees exist
+   * - maxAttendees: Can increase freely, decrease only if >= (confirmed + pending)
+   *
+   * Response: Updated event object
+   *
+   * Errors:
+   * - 403: Not event owner
+   * - 403: Business rule violation (price change with attendees, etc.)
+   * - 404: Event not found
+   */
+  @Patch(':id')
+  @UseGuards(JwtAuthGuard)
+  async updateEvent(
+    @Param('id') eventId: string,
+    @Body() dto: UpdateEventDto,
+    @Req() req: any,
+  ) {
+    this.logger.log(`PATCH /events/${eventId} - User: ${req.user.sub}`);
+    return this.eventsService.updateEvent(eventId, req.user.sub, dto);
+  }
+
+  /**
+   * 🗑️ ENDPOINT: DELETE /events/:id
+   *
+   * Cancel/delete event (soft delete - event owner only).
+   *
+   * Auth: Required (JWT) + Must be event owner
+   *
+   * Business Rules:
+   * - BLOCKED if event has confirmed attendees (requires refunds - Phase 10)
+   * - BLOCKED if event has already occurred (kept for history)
+   * - Cancels all PENDING invitations
+   * - Deactivates invite link
+   * - Marks event as deleted (soft delete with deletedAt timestamp)
+   *
+   * Response:
+   * {
+   *   "message": "Event cancelled successfully",
+   *   "eventId": "event-uuid",
+   *   "deletedAt": "2026-01-20T19:00:00Z"
+   * }
+   *
+   * Errors:
+   * - 403: Not event owner
+   * - 403: Has confirmed attendees (need refunds first)
+   * - 403: Event already occurred
+   * - 404: Event not found
+   */
+  @Delete(':id')
+  @UseGuards(JwtAuthGuard)
+  async deleteEvent(@Param('id') eventId: string, @Req() req: any) {
+    this.logger.log(`DELETE /events/${eventId} - User: ${req.user.sub}`);
+    return this.eventsService.deleteEvent(eventId, req.user.sub);
+  }
+
+  /**
+   * 👥 ENDPOINT: GET /events/:id/attendees
+   *
+   * List all attendees for an event (event owner only).
+   *
+   * Auth: Required (JWT) + Must be event owner
+   *
+   * Query Params:
+   * - page: number (default 1)
+   * - pageSize: number (default 20, max 100)
+   * - status: 'all' | 'pending' | 'confirmed' | 'declined' (default 'confirmed')
+   *
+   * Response:
+   * {
+   *   "attendees": [
+   *     {
+   *       "id": "user-uuid",
+   *       "name": "John Doe",
+   *       "email": "john@example.com",
+   *       "invitationStatus": "CONFIRMED",
+   *       "joinedAt": "2026-01-15T10:00:00Z",
+   *       "confirmedAt": "2026-01-15T10:05:00Z",
+   *       "payment": {
+   *         "id": "payment-uuid",
+   *         "amount": 25.50,
+   *         "status": "SUCCESS",
+   *         "paidAt": "2026-01-15T10:05:00Z"
+   *       },
+   *       "ticket": {
+   *         "id": "ticket-uuid",
+   *         "ticketCode": "abc-123-def",
+   *         "checkedIn": false,
+   *         "checkedInAt": null
+   *       }
+   *     }
+   *   ],
+   *   "pagination": {
+   *     "total": 25,
+   *     "page": 1,
+   *     "pageSize": 20,
+   *     "totalPages": 2
+   *   }
+   * }
+   *
+   * Use Case:
+   * - Event creator managing attendance
+   * - Check-in at event entrance
+   * - Contact attendees
+   */
+  @Get(':id/attendees')
+  @UseGuards(JwtAuthGuard)
+  async getAttendees(
+    @Param('id') eventId: string,
+    @Query() query: GetAttendeesDto,
+    @Req() req: any,
+  ) {
+    this.logger.log(
+      `GET /events/${eventId}/attendees - User: ${req.user.sub}, Status: ${query.status}, Page: ${query.page}`,
+    );
+    return this.eventsService.getAttendees(
+      eventId,
+      req.user.sub,
+      query.page,
+      query.pageSize,
+      query.status,
+    );
+  }
+
+  /**
+   * ✅ ENDPOINT: POST /events/:id/checkin
+   *
+   * Check-in a ticket at event entrance (event owner only).
+   *
+   * Auth: Required (JWT) + Must be event owner
+   *
+   * Request Body:
+   * {
+   *   "ticketCode": "abc-123-def-456"  // From QR code scan
+   * }
+   *
+   * Business Rules:
+   * - Only event creator can check-in tickets
+   * - Ticket must exist and belong to this event
+   * - Ticket cannot already be used
+   * - Check-in window: 2 hours before event start until event end (+2h buffer)
+   * - Event must not be cancelled
+   *
+   * Response (Success):
+   * {
+   *   "success": true,
+   *   "message": "Check-in successful",
+   *   "attendee": {
+   *     "name": "John Doe",
+   *     "email": "john@example.com",
+   *     "ticketCode": "abc-123-def",
+   *     "checkedInAt": "2026-02-15T19:45:00Z"
+   *   }
+   * }
+   *
+   * Errors:
+   * - 404: Ticket not found
+   * - 403: Not event owner
+   * - 403: Wrong event
+   * - 403: Outside check-in window
+   * - 409: Ticket already used
+   * - 409: Event cancelled
+   *
+   * Use Case:
+   * - Event entrance: Staff scans QR code
+   * - System validates ticket
+   * - Marks ticket as used (prevents reuse)
+   * - Shows attendee name for greeting
+   */
+  @Post(':id/checkin')
+  @UseGuards(JwtAuthGuard)
+  async checkinTicket(
+    @Param('id') eventId: string,
+    @Body() dto: CheckinDto,
+    @Req() req: any,
+  ) {
+    this.logger.log(
+      `POST /events/${eventId}/checkin - User: ${req.user.sub}, Ticket: ${dto.ticketCode}`,
+    );
+    return this.ticketsService.checkinTicket(
+      eventId,
+      dto.ticketCode,
+      req.user.sub,
+    );
   }
 }

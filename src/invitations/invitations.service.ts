@@ -241,6 +241,184 @@ export class InvitationsService {
   }
 
   /**
+   * 📋 GET MY INVITATIONS
+   *
+   * Retrieve all invitations for the authenticated user with optional filtering.
+   *
+   * @param userId - Authenticated user ID
+   * @param status - Filter: 'all', 'pending', 'confirmed', 'declined'
+   * @param page - Page number (1-indexed)
+   * @param pageSize - Items per page
+   */
+  async getMyInvitations(
+    userId: string,
+    status: string = 'all',
+    page: number = 1,
+    pageSize: number = 20,
+  ) {
+    const skip = (page - 1) * pageSize;
+
+    // Build status filter
+    const statusMap: Record<string, InvitationStatus[]> = {
+      all: [
+        InvitationStatus.PENDING,
+        InvitationStatus.CONFIRMED,
+        InvitationStatus.DECLINED,
+      ],
+      pending: [InvitationStatus.PENDING],
+      confirmed: [InvitationStatus.CONFIRMED],
+      declined: [InvitationStatus.DECLINED],
+    };
+
+    const statuses = statusMap[status] || statusMap.all;
+
+    // Query invitations with event details
+    const [invitations, total] = await Promise.all([
+      this.prisma.eventInvitation.findMany({
+        where: {
+          userId,
+          status: { in: statuses },
+          event: {
+            deletedAt: null, // Exclude cancelled events
+          },
+        },
+        include: {
+          event: {
+            select: {
+              id: true,
+              title: true,
+              description: true,
+              dateTime: true,
+              location: true,
+              entryPrice: true,
+              maxAttendees: true,
+            },
+          },
+        },
+        orderBy: [{ event: { dateTime: 'asc' } }, { createdAt: 'desc' }],
+        skip,
+        take: pageSize,
+      }),
+      this.prisma.eventInvitation.count({
+        where: {
+          userId,
+          status: { in: statuses },
+          event: {
+            deletedAt: null,
+          },
+        },
+      }),
+    ]);
+
+    // Format response
+    const formattedInvitations = invitations.map((inv) => ({
+      id: inv.id,
+      status: inv.status,
+      event: {
+        id: inv.event.id,
+        title: inv.event.title,
+        description: inv.event.description,
+        dateTime: inv.event.dateTime,
+        location: inv.event.location,
+        entryPrice: Number(inv.event.entryPrice),
+        maxAttendees: inv.event.maxAttendees,
+      },
+      createdAt: inv.createdAt,
+      confirmedAt: inv.confirmedAt,
+      declinedAt: inv.declinedAt,
+    }));
+
+    return {
+      invitations: formattedInvitations,
+      pagination: {
+        total,
+        page,
+        pageSize,
+        totalPages: Math.ceil(total / pageSize),
+      },
+    };
+  }
+
+  /**
+   * 🔍 GET INVITATION BY ID
+   *
+   * Retrieve detailed invitation information.
+   *
+   * Authorization:
+   * - Invitation owner can view
+   * - Event creator can view (to check invitation status)
+   */
+  async getInvitationById(invitationId: string, userId: string) {
+    const invitation = await this.prisma.eventInvitation.findUnique({
+      where: { id: invitationId },
+      include: {
+        event: {
+          select: {
+            id: true,
+            title: true,
+            description: true,
+            dateTime: true,
+            location: true,
+            entryPrice: true,
+            maxAttendees: true,
+            inviterId: true,
+          },
+        },
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true,
+          },
+        },
+      },
+    });
+
+    if (!invitation) {
+      throw new NotFoundException('Invitation not found');
+    }
+
+    // Check authorization: invitation owner or event creator
+    const isOwner = invitation.userId === userId;
+    const isEventCreator = invitation.event.inviterId === userId;
+
+    if (!isOwner && !isEventCreator) {
+      throw new ForbiddenException(
+        'You do not have permission to view this invitation',
+      );
+    }
+
+    // Format response (hide user details unless event creator)
+    const response: any = {
+      id: invitation.id,
+      status: invitation.status,
+      event: {
+        id: invitation.event.id,
+        title: invitation.event.title,
+        description: invitation.event.description,
+        dateTime: invitation.event.dateTime,
+        location: invitation.event.location,
+        entryPrice: Number(invitation.event.entryPrice),
+        maxAttendees: invitation.event.maxAttendees,
+      },
+      createdAt: invitation.createdAt,
+      confirmedAt: invitation.confirmedAt,
+      declinedAt: invitation.declinedAt,
+    };
+
+    // Only show user details to event creator
+    if (isEventCreator) {
+      response.user = {
+        id: invitation.user.id,
+        name: invitation.user.name || 'Anonymous',
+        email: invitation.user.email,
+      };
+    }
+
+    return response;
+  }
+
+  /**
    * 🔍 FIND PENDING INVITATION
    *
    * Helper method to check if user has a PENDING invitation for an event.

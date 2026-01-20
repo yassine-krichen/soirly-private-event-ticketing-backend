@@ -4,7 +4,6 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
 }
 
 // ============================================
@@ -68,6 +67,7 @@ model Event {
   maxAttendees     Int?      // null = unlimited
   inviterId        String
   sponsorId        String?   // selected sponsor for this event
+  deletedAt        DateTime? // soft delete for Phase 4
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
 
@@ -81,6 +81,7 @@ model Event {
   @@index([dateTime])
   @@index([inviteToken])
   @@index([sponsorId])
+  @@index([deletedAt])
 }
 
 model EventInvitation {
@@ -138,7 +139,7 @@ model Ticket {
   userId      String
   paymentId   String    @unique  // one ticket per payment
   issuedAt    DateTime  @default(now())
-  checkedInAt DateTime?          // for future check-in feature
+  checkedInAt DateTime?          // when ticket was scanned/checked-in
 
   event   Event   @relation(fields: [eventId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
