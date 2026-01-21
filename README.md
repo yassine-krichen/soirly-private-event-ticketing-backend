@@ -1,98 +1,153 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Soirly Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+![NestJS](https://img.shields.io/badge/NestJS-11-E0234E?style=flat&logo=nestjs&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.3-3178C6?style=flat&logo=typescript&logoColor=white)
+![Prisma](https://img.shields.io/badge/Prisma-7-2D3748?style=flat&logo=prisma&logoColor=white)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?style=flat&logo=postgresql&logoColor=white)
+![JWT](https://img.shields.io/badge/JWT-Auth-000000?style=flat&logo=jsonwebtokens&logoColor=white)
+![Winston](https://img.shields.io/badge/Winston-Logging-231F20?style=flat&logo=winston&logoColor=white)
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+A **social event management platform** where users create private events, invite friends via links, handle payments, generate tickets, and manage check-ins.
 
-## Description
+Built with **NestJS**, **Prisma**, **PostgreSQL**, and **Konnect** (payment processing).
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+---
 
-## Project setup
+## What is Soirly?
 
-```bash
-$ npm install
+Soirly helps people organize private events with friends by:
+
+- Creating events with entry prices
+- Generating shareable invite links
+- Processing payments securely (Konnect integration)
+- Issuing QR code tickets
+- Managing event check-ins
+
+Think of it as **"Split the bill, but for events"** — organizers set a price, attendees pay their share, everyone gets a ticket.
+
+---
+
+## User Journey
+
+```mermaid
+sequenceDiagram
+    participant O as Organizer
+    participant A as Attendee
+    participant S as Backend
+    participant K as Konnect (Payment)
+
+    Note over O: 1️⃣ Create Event
+    O->>S: POST /events (title, date, price)
+    S-->>O: Event + inviteToken
+
+    Note over O: 2️⃣ Share Invite Link
+    O->>A: Send invite link with token
+
+    Note over A: 3️⃣ Join Event
+    A->>S: GET /events/invite/:token (preview)
+    S-->>A: Event details
+    A->>S: POST /invitations/join/:token
+    S-->>A: Invitation (status: PENDING)
+
+    Note over A: 4️⃣ Pay Entry Fee
+    A->>S: POST /payments
+    S->>K: Create payment link
+    K-->>S: Payment URL
+    S-->>A: Payment URL
+    A->>K: Complete payment
+    K->>S: Webhook (payment success)
+    S->>S: Update invitation → CONFIRMED
+    S->>S: Generate ticket (QR code)
+
+    Note over A: 5️⃣ Get Ticket
+    A->>S: GET /tickets/me
+    S-->>A: Ticket with QR code
+
+    Note over O,A: 6️⃣ Event Day - Check-In
+    O->>S: POST /events/:id/checkin (scan QR)
+    S->>S: Validate ticket
+    S-->>O: ✅ Attendee checked in
 ```
 
-## Compile and run the project
+---
+
+## Quick Start
+
+### 1. Install Dependencies
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+npm install
 ```
 
-## Run tests
+### 2. Setup Environment
+
+Create `.env` file:
+
+```env
+# Database
+DATABASE_URL="postgresql://user:password@localhost:5432/soirly"
+
+# Auth
+JWT_SECRET="your-secret-key-min-32-chars"
+JWT_EXPIRES_IN="7d"
+
+# Google OAuth
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-secret"
+
+# Konnect Payment
+KONNECT_API_KEY="your-konnect-key"
+KONNECT_WALLET_ID="your-wallet-id"
+KONNECT_WEBHOOK_SECRET="your-webhook-secret"
+
+# Security
+ALLOWED_ORIGINS="http://localhost:3000,http://localhost:19006"
+```
+
+### 3. Run Migrations
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+npx prisma migrate dev
 ```
 
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+### 4. Start Server
 
 ```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
+# Development (watch mode)
+npm run start:dev
+
+# Production
+npm run start:prod
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Server runs on **http://localhost:3000**
 
-## Resources
+---
 
-Check out a few resources that may come in handy when working with NestJS:
+## Database Schema
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+See `prisma/schema.prisma` for the complete database schema.
 
-## Support
+Use the [Prisma Generate UML](https://marketplace.visualstudio.com/items?itemName=AbianS.prisma-generate-uml) VS Code extension to visualize relationships.
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+---
 
-## Stay in touch
+## Testing
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+Use `.http` files with the [REST Client](https://marketplace.visualstudio.com/items?itemName=humao.rest-client) VS Code extension for manual testing.
+
+---
+
+## Contributing
+
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open Pull Request
+
+---
 
 ## License
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+See `LICENSE` file for details.
