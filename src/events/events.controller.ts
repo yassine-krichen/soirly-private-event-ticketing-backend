@@ -11,6 +11,7 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { EventAccessGuard } from '../common/guards/event-access.guard';
 import { CreateEventDto } from './dto/create-event.dto';
@@ -68,6 +69,7 @@ export class EventsController {
    */
   @Post()
   @UseGuards(JwtAuthGuard)
+  @Throttle({ medium: { limit: 10, ttl: 60000 } }) // 10 events per minute
   create(@Req() req: any, @Body() dto: CreateEventDto) {
     // req.user.sub = authenticated user's ID
     return this.eventsService.create(req.user.sub, dto);
@@ -471,6 +473,7 @@ export class EventsController {
    */
   @Post(':id/checkin')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ medium: { limit: 30, ttl: 60000 } }) // 30 check-ins per minute
   async checkinTicket(
     @Param('id') eventId: string,
     @Body() dto: CheckinDto,

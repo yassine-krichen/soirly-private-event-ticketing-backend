@@ -8,6 +8,7 @@ import {
   UseGuards,
   Logger,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { InvitationsService } from './invitations.service';
 
@@ -67,6 +68,7 @@ export class InvitationsController {
    */
   @Post('join/:inviteToken')
   @UseGuards(JwtAuthGuard)
+  @Throttle({ medium: { limit: 20, ttl: 60000 } }) // 20 joins per minute
   async joinEvent(@Param('inviteToken') inviteToken: string, @Req() req: any) {
     this.logger.log(
       `POST /invitations/join/${inviteToken} - User: ${req.user.sub}`,

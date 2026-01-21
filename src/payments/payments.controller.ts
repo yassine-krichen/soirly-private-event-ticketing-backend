@@ -8,6 +8,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { PaymentAccessGuard } from '../common/guards/payment-access.guard';
 import { CreatePaymentDto } from './dto/create-payment.dto';
@@ -137,6 +138,7 @@ export class PaymentsController {
    * { "success": true }
    */
   @Post('webhook')
+  @SkipThrottle() // External API calls - do not throttle
   webhook(
     @Headers('x-konnect-signature') signature: string | undefined,
     @Body() dto: KonnectWebhookDto,
